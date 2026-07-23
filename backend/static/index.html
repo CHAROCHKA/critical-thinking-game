@@ -61,10 +61,19 @@
         .btn-next:hover {
             background: #0d47a1;
         }
+        .btn-logout {
+            background: #6c757d;
+            color: white;
+        }
+        .btn-logout:hover {
+            background: #5a6268;
+        }
         .result {
             margin-top: 15px;
             padding: 15px;
             border-radius: 8px;
+        }
+        .result.correct {
             background: #e8f5e9;
         }
         .result.error {
@@ -87,14 +96,74 @@
             color: #555;
         }
         .hidden {
-            display: none;
+            display: none !important;
+        }
+        input[type="text"], input[type="password"] {
+            padding: 10px;
+            font-size: 1em;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            width: 100%;
+            max-width: 300px;
+            margin-bottom: 10px;
+        }
+        .auth-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: flex-start;
+        }
+        .auth-form .btn {
+            align-self: flex-start;
+        }
+        .auth-link {
+            color: #1976d2;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+        .user-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .user-info span {
+            font-weight: bold;
+        }
+        .error-message {
+            color: #d32f2f;
+            margin-top: 10px;
         }
     </style>
 </head>
 <body>
-    <h1>🧠 Тренажёр критического мышления</h1>
 
+<!-- Страница логина/регистрации -->
+<div id="auth-page">
+    <div class="card" style="max-width:400px; margin: auto;">
+        <h1>🧠 Тренажёр критического мышления</h1>
+        <div id="auth-form-container">
+            <h2 id="auth-title">Вход</h2>
+            <div class="auth-form">
+                <input type="text" id="auth-username" placeholder="Имя пользователя">
+                <input type="password" id="auth-password" placeholder="Пароль">
+                <button class="btn btn-next" id="auth-submit">Войти</button>
+                <span id="auth-error" class="error-message"></span>
+                <p>
+                    <span id="auth-toggle-link" class="auth-link">Нет аккаунта? Зарегистрироваться</span>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Основная страница (игра) -->
+<div id="game-page" class="hidden">
     <div class="card">
+        <div class="user-info">
+            <span id="username-display"></span>
+            <button class="btn btn-logout" id="btn-logout">Выйти</button>
+        </div>
         <div class="headline" id="headline">Нажми «Получить вопрос»</div>
         <div class="btn-group">
             <button class="btn btn-yes" id="btn-yes">Манипуляция</button>
@@ -118,89 +187,226 @@
         </div>
         <button class="btn btn-next" id="btn-refresh-stats" style="margin-top:10px;">Обновить статистику</button>
     </div>
+</div>
 
-    <script>
-        const API_URL = window.location.origin; // используем тот же хост и порт
+<script>
+    const API_BASE = window.location.origin;
+    let currentHeadlineId = null;
+    let token = null;
 
-        let currentHeadlineId = null;
+    // DOM элементы
+    const authPage = document.getElementById('auth-page');
+    const gamePage = document.getElementById('game-page');
+    const authTitle = document.getElementById('auth-title');
+    const authSubmit = document.getElementById('auth-submit');
+    const authToggleLink = document.getElementById('auth-toggle-link');
+    const authError = document.getElementById('auth-error');
+    const authUsername = document.getElementById('auth-username');
+    const authPassword = document.getElementById('auth-password');
+    const usernameDisplay = document.getElementById('username-display');
 
-        async function fetchStats() {
-            try {
-                const res = await fetch(`${API_URL}/game/stats`);
-                const data = await res.json();
-                document.getElementById('total').textContent = data.total_answers;
-                document.getElementById('correct').textContent = data.correct_answers;
-                document.getElementById('score').textContent = data.score;
-                document.getElementById('level').textContent = data.level;
-            } catch (e) {
-                console.error('Ошибка получения статистики', e);
-            }
+    let isLoginMode = true;
+
+    // Переключение между логином и регистрацией
+    authToggleLink.addEventListener('click', () => {
+        isLoginMode = !isLoginMode;
+        authTitle.textContent = isLoginMode ? 'Вход' : 'Регистрация';
+        authSubmit.textContent = isLoginMode ? 'Войти' : 'Зарегистрироваться';
+        authToggleLink.textContent = isLoginMode ? 'Нет аккаунта? Зарегистрироваться' : 'Уже есть аккаунт? Войти';
+        authError.textContent = '';
+    });
+
+    // Отправка формы авторизации
+    authSubmit.addEventListener('click', async () => {
+        const username = authUsername.value.trim();
+        const password = authPassword.value.trim();
+        if (!username || !password) {
+            authError.textContent = 'Заполните все поля';
+            return;
         }
 
-        async function fetchNext() {
-            try {
-                const res = await fetch(`${API_URL}/game/next`);
-                if (res.status === 404) {
-                    document.getElementById('headline').textContent = 'Вопросов пока нет. Добавьте заголовки.';
-                    document.getElementById('result').classList.add('hidden');
-                    return;
-                }
-                const data = await res.json();
-                document.getElementById('headline').textContent = data.text;
-                currentHeadlineId = data.id;
-                document.getElementById('question-id').textContent = `ID: ${data.id} | Сложность: ${data.difficulty} | Категория: ${data.category || '—'}`;
-                document.getElementById('result').classList.add('hidden');
-                document.getElementById('explanation').textContent = '';
-            } catch (e) {
-                console.error('Ошибка получения вопроса', e);
-                document.getElementById('headline').textContent = 'Ошибка загрузки вопроса.';
-            }
-        }
+        const endpoint = isLoginMode ? '/auth/login' : '/auth/register';
+        const body = isLoginMode
+            ? new URLSearchParams({ username, password })
+            : new URLSearchParams({ username, password });
 
-        async function submitAnswer(userAnswer) {
-            if (!currentHeadlineId) {
-                alert('Сначала получите вопрос (кнопка "Получить вопрос")');
+        try {
+            const res = await fetch(`${API_BASE}${endpoint}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: body,
+            });
+
+            if (!res.ok) {
+                const data = await res.json();
+                authError.textContent = data.detail || 'Ошибка';
                 return;
             }
-            try {
-                const res = await fetch(`${API_URL}/game/answer`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ headline_id: currentHeadlineId, user_answer: userAnswer })
-                });
-                const data = await res.json();
-                const resultDiv = document.getElementById('result');
-                resultDiv.classList.remove('hidden', 'error');
-                if (data.is_correct) {
-                    resultDiv.textContent = '✅ Правильно!';
-                    resultDiv.style.background = '#e8f5e9';
-                } else {
-                    resultDiv.textContent = `❌ Неверно. Правильный ответ: ${data.correct_answer ? 'манипуляция' : 'факт'}`;
-                    resultDiv.style.background = '#ffebee';
-                }
-                if (data.explanation) {
-                    document.getElementById('explanation').textContent = `📝 ${data.explanation}`;
-                }
-                // Обновляем статистику после ответа
-                await fetchStats();
-                currentHeadlineId = null; // чтобы не отправить повторно
-            } catch (e) {
-                console.error('Ошибка отправки ответа', e);
-                const resultDiv = document.getElementById('result');
-                resultDiv.classList.remove('hidden');
-                resultDiv.textContent = 'Ошибка отправки ответа.';
-                resultDiv.style.background = '#ffebee';
+
+            const data = await res.json();
+
+            if (isLoginMode) {
+                // Сохраняем токен и переходим в игру
+                token = data.access_token;
+                localStorage.setItem('token', token);
+                localStorage.setItem('username', username);
+                startGame(username);
+            } else {
+                // После регистрации переключаемся на логин
+                authError.textContent = '✅ Регистрация успешна! Теперь войдите.';
+                authError.style.color = '#2e7d32';
+                authToggleLink.click(); // переключить на логин
+                authUsername.value = '';
+                authPassword.value = '';
             }
+        } catch (e) {
+            authError.textContent = 'Ошибка соединения';
         }
+    });
 
-        document.getElementById('btn-next').addEventListener('click', fetchNext);
-        document.getElementById('btn-yes').addEventListener('click', () => submitAnswer(true));
-        document.getElementById('btn-no').addEventListener('click', () => submitAnswer(false));
-        document.getElementById('btn-refresh-stats').addEventListener('click', fetchStats);
+    // Выход
+    document.getElementById('btn-logout').addEventListener('click', () => {
+        localStorage.removeItem('token');
+        localStorage.removeItem('username');
+        token = null;
+        authPage.classList.remove('hidden');
+        gamePage.classList.add('hidden');
+        authUsername.value = '';
+        authPassword.value = '';
+        authError.textContent = '';
+    });
 
-        // При загрузке страницы — показать первый вопрос и статистику
+    // Проверка авторизации при загрузке
+    window.addEventListener('DOMContentLoaded', () => {
+        const savedToken = localStorage.getItem('token');
+        const savedUsername = localStorage.getItem('username');
+        if (savedToken && savedUsername) {
+            token = savedToken;
+            startGame(savedUsername);
+        } else {
+            authPage.classList.remove('hidden');
+            gamePage.classList.add('hidden');
+        }
+    });
+
+    function startGame(username) {
+        authPage.classList.add('hidden');
+        gamePage.classList.remove('hidden');
+        usernameDisplay.textContent = `👤 ${username}`;
         fetchNext();
         fetchStats();
-    </script>
+    }
+
+    // Функция для запросов с токеном
+    async function fetchWithAuth(url, options = {}) {
+        if (!token) {
+            token = localStorage.getItem('token');
+        }
+        const headers = {
+            ...options.headers,
+            'Authorization': `Bearer ${token}`,
+        };
+        const res = await fetch(`${API_BASE}${url}`, { ...options, headers });
+        if (res.status === 401) {
+            // Токен невалидный — выходим
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            token = null;
+            authPage.classList.remove('hidden');
+            gamePage.classList.add('hidden');
+            throw new Error('Не авторизован');
+        }
+        return res;
+    }
+
+    // Получить вопрос
+    async function fetchNext() {
+        try {
+            const res = await fetchWithAuth('/game/next');
+            if (!res.ok) {
+                if (res.status === 404) {
+                    document.getElementById('headline').textContent = 'Вопросов пока нет. Добавьте заголовки.';
+                    return;
+                }
+                throw new Error('Ошибка загрузки вопроса');
+            }
+            const data = await res.json();
+            document.getElementById('headline').textContent = data.text;
+            currentHeadlineId = data.id;
+            document.getElementById('question-id').textContent = `ID: ${data.id} | Сложность: ${data.difficulty} | Категория: ${data.category || '—'}`;
+            document.getElementById('result').classList.add('hidden');
+            document.getElementById('explanation').textContent = '';
+        } catch (e) {
+            console.error(e);
+            document.getElementById('headline').textContent = 'Ошибка загрузки вопроса.';
+        }
+    }
+
+    // Отправить ответ
+    async function submitAnswer(userAnswer) {
+        if (!currentHeadlineId) {
+            alert('Сначала получите вопрос');
+            return;
+        }
+        try {
+            const res = await fetchWithAuth('/game/answer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ headline_id: currentHeadlineId, user_answer: userAnswer })
+            });
+            if (!res.ok) throw new Error('Ошибка отправки ответа');
+            const data = await res.json();
+            const resultDiv = document.getElementById('result');
+            resultDiv.classList.remove('hidden', 'correct', 'error');
+            if (data.is_correct) {
+                resultDiv.textContent = '✅ Правильно!';
+                resultDiv.classList.add('correct');
+            } else {
+                resultDiv.textContent = `❌ Неверно. Правильный ответ: ${data.correct_answer ? 'манипуляция' : 'факт'}`;
+                resultDiv.classList.add('error');
+            }
+            if (data.explanation) {
+                document.getElementById('explanation').textContent = `📝 ${data.explanation}`;
+            }
+            currentHeadlineId = null;
+            await fetchStats();
+        } catch (e) {
+            console.error(e);
+            const resultDiv = document.getElementById('result');
+            resultDiv.classList.remove('hidden');
+            resultDiv.textContent = 'Ошибка отправки ответа.';
+            resultDiv.classList.add('error');
+        }
+    }
+
+    // Получить статистику
+    async function fetchStats() {
+        try {
+            const res = await fetchWithAuth('/game/stats');
+            if (!res.ok) throw new Error('Ошибка статистики');
+            const data = await res.json();
+            document.getElementById('total').textContent = data.total_answers;
+            document.getElementById('correct').textContent = data.correct_answers;
+            document.getElementById('score').textContent = data.score;
+            document.getElementById('level').textContent = data.level;
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    // Обработчики кнопок
+    document.getElementById('btn-next').addEventListener('click', fetchNext);
+    document.getElementById('btn-yes').addEventListener('click', () => submitAnswer(true));
+    document.getElementById('btn-no').addEventListener('click', () => submitAnswer(false));
+    document.getElementById('btn-refresh-stats').addEventListener('click', fetchStats);
+
+    // Если пользователь уже авторизован, но не на странице игры — инициализация
+    if (token) {
+        const username = localStorage.getItem('username');
+        if (username) startGame(username);
+    }
+</script>
 </body>
 </html>
