@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тренажёр критического мышления</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f4f4f9;
+            color: #222;
+        }
+        h1 { color: #1a3c5e; }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .headline {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 12px 30px;
+            font-size: 1.1em;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+        .btn-yes {
+            background: #d32f2f;
+            color: white;
+        }
+        .btn-yes:hover {
+            background: #b71c1c;
+        }
+        .btn-no {
+            background: #2e7d32;
+            color: white;
+        }
+        .btn-no:hover {
+            background: #1b5e20;
+        }
+        .btn-next {
+            background: #1976d2;
+            color: white;
+        }
+        .btn-next:hover {
+            background: #0d47a1;
+        }
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 8px;
+            background: #e8f5e9;
+        }
+        .result.error {
+            background: #ffebee;
+        }
+        .stats {
+            display: flex;
+            gap: 30px;
+            font-size: 1.1em;
+            flex-wrap: wrap;
+        }
+        .stats span {
+            background: #e3f2fd;
+            padding: 6px 14px;
+            border-radius: 20px;
+        }
+        #explanation {
+            margin-top: 10px;
+            font-style: italic;
+            color: #555;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧠 Тренажёр критического мышления</h1>
+
+    <div class="card">
+        <div class="headline" id="headline">Нажми «Получить вопрос»</div>
+        <div class="btn-group">
+            <button class="btn btn-yes" id="btn-yes">Манипуляция</button>
+            <button class="btn btn-no" id="btn-no">Факт</button>
+            <button class="btn btn-next" id="btn-next">Получить вопрос</button>
+        </div>
+        <div id="result" class="result hidden"></div>
+        <div id="explanation"></div>
+        <div style="margin-top: 15px;">
+            <span id="question-id" style="font-size:0.9em; color:#888;"></span>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>📊 Статистика</h3>
+        <div class="stats" id="stats">
+            <span>Всего: <strong id="total">0</strong></span>
+            <span>Правильных: <strong id="correct">0</strong></span>
+            <span>Счёт: <strong id="score">0</strong></span>
+            <span>Уровень: <strong id="level">1</strong></span>
+        </div>
+        <button class="btn btn-next" id="btn-refresh-stats" style="margin-top:10px;">Обновить статистику</button>
+    </div>
+
+    <script>
+        const API_URL = window.location.origin; // используем тот же хост и порт
+
+        let currentHeadlineId = null;
+
+        async function fetchStats() {
+            try {
+                const res = await fetch(`${API_URL}/game/stats`);
+                const data = await res.json();
+                document.getElementById('total').textContent = data.total_answers;
+                document.getElementById('correct').textContent = data.correct_answers;
+                document.getElementById('score').textContent = data.score;
+                document.getElementById('level').textContent = data.level;
+            } catch (e) {
+                console.error('Ошибка получения статистики', e);
+            }
+        }
+
+        async function fetchNext() {
+            try {
+                const res = await fetch(`${API_URL}/game/next`);
+                if (res.status === 404) {
+                    document.getElementById('headline').textContent = 'Вопросов пока нет. Добавьте заголовки.';
+                    document.getElementById('result').classList.add('hidden');
+                    return;
+                }
+                const data = await res.json();
+                document.getElementById('headline').textContent = data.text;
+                currentHeadlineId = data.id;
+                document.getElementById('question-id').textContent = `ID: ${data.id} | Сложность: ${data.difficulty} | Категория: ${data.category || '—'}`;
+                document.getElementById('result').classList.add('hidden');
+                document.getElementById('explanation').textContent = '';
+            } catch (e) {
+                console.error('Ошибка получения вопроса', e);
+                document.getElementById('headline').textContent = 'Ошибка загрузки вопроса.';
+            }
+        }
+
+        async function submitAnswer(userAnswer) {
+            if (!currentHeadlineId) {
+                alert('Сначала получите вопрос (кнопка "Получить вопрос")');
+                return;
+            }
+            try {
+                const res = await fetch(`${API_URL}/game/answer`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ headline_id: currentHeadlineId, user_answer: userAnswer })
+                });
+                const data = await res.json();
+                const resultDiv = document.getElementById('result');
+                resultDiv.classList.remove('hidden', 'error');
+                if (data.is_correct) {
+                    resultDiv.textContent = '✅ Правильно!';
+                    resultDiv.style.background = '#e8f5e9';
+                } else {
+                    resultDiv.textContent = `❌ Неверно. Правильный ответ: ${data.correct_answer ? 'манипуляция' : 'факт'}`;
+                    resultDiv.style.background = '#ffebee';
+                }
+                if (data.explanation) {
+                    document.getElementById('explanation').textContent = `📝 ${data.explanation}`;
+                }
+                // Обновляем статистику после ответа
+                await fetchStats();
+                currentHeadlineId = null; // чтобы не отправить повторно
+            } catch (e) {
+                console.error('Ошибка отправки ответа', e);
+                const resultDiv = document.getElementById('result');
+                resultDiv.classList.remove('hidden');
+                resultDiv.textContent = 'Ошибка отправки ответа.';
+                resultDiv.style.background = '#ffebee';
+            }
+        }
+
+        document.getElementById('btn-next').addEventListener('click', fetchNext);
+        document.getElementById('btn-yes').addEventListener('click', () => submitAnswer(true));
+        document.getElementById('btn-no').addEventListener('click', () => submitAnswer(false));
+        document.getElementById('btn-refresh-stats').addEventListener('click', fetchStats);
+
+        // При загрузке страницы — показать первый вопрос и статистику
+        fetchNext();
+        fetchStats();
+    </script>
+</body>
+</html>
